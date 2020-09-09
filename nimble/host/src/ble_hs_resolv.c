@@ -508,6 +508,7 @@ ble_hs_is_on_resolv_list(uint8_t *addr, uint8_t addr_type)
     for (i = 1; i < g_ble_hs_resolv_data.rl_cnt; ++i) {
         if ((rl->rl_addr_type == addr_type) &&
                 (!memcmp(rl->rl_identity_addr, addr, BLE_DEV_ADDR_LEN))) {
+            BLE_HS_LOG(ERROR, "kevinh did find!\n");
             return i;
         }
         ++rl;
@@ -567,9 +568,49 @@ ble_hs_resolv_list_add(uint8_t *cmdbuf)
     addr_type = cmdbuf[0];
     ident_addr = cmdbuf + 1;
 
+#if 0
+    /* Note from @geeksville on this proof-of-concept fix.
+    This function returning !0 caused my android client device to force re-pairing, because the ESP32 abandoned a previously working
+    link.  This failure occurred after the following error message/clue was emitted in the logs "failed to configure restored IRK".  Searching
+    for that string and then adding some debugging led me to this error case occurring.
+
+    Note: for my application I teardown and then restart the BLE stack fairly often, because my device enters light-sleep and I want to turn
+    off bluetooth during that period.  This code and the nimble fixes in https://github.com/espressif/esp-idf/issues/5530 had been working qutie
+    nicely for over a month with a couple thousand shipped devices on my open-source project (www.meshtastic.org).  This failure started to occur for
+    only one of my personal test devices.
+
+    Not knowing much at all about the innards of this stack my nasty hack in this case is to replace
+    "if there is already an entry found for addr X, fail" with "if there is already an entry found for addr X, replace it"
+
+    I have no idea if this hack is a bad idea, but I though I'd include it here for comment.
+
+    (cc @bfriedkin because it sounds like you are doing similar things to me, so if you encounter this bug it might be relvant to you)
+
+    My private debug output listed below:
+    BLE task running
+    registered service 0x1800 with handle=1
+    registered service 0x1801 with handle=6
+    registered service 6ba1b218-15a8-461f-9fa8-5dcae273eafd with handle=10
+    registered service cb0b9a0b-a84c-4c0d-bdbb-442e3144ee30 with handle=18
+    failed to configure restored IRK
+    BLE advertisting type=0, Private=0, Device Address: 39:24:62:ab:dd:df
+    */
     if (ble_hs_is_on_resolv_list(ident_addr, addr_type)) {
         return BLE_HS_EINVAL;
     }
+#else
+    // There might be an existing entry - if so, delete it.
+    // Note: using ble_hs_resolv_list_rmv does not work, because that also updates some other datastructure and fails at boot.
+    // ble_hs_resolv_list_rmv(ident_addr, addr_type);
+    int position = ble_hs_is_on_resolv_list(ident_addr, addr_type);
+    if (position) {
+        memmove(&g_ble_hs_resolv_list[position],
+                &g_ble_hs_resolv_list[position + 1],
+                (g_ble_hs_resolv_data.rl_cnt - position) * sizeof (struct
+                        ble_hs_resolv_entry));
+        --g_ble_hs_resolv_data.rl_cnt;
+    }
+#endif
 
     rl = &g_ble_hs_resolv_list[g_ble_hs_resolv_data.rl_cnt];
     memset(rl, 0, sizeof(*rl));
