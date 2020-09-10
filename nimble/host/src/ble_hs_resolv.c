@@ -508,7 +508,6 @@ ble_hs_is_on_resolv_list(uint8_t *addr, uint8_t addr_type)
     for (i = 1; i < g_ble_hs_resolv_data.rl_cnt; ++i) {
         if ((rl->rl_addr_type == addr_type) &&
                 (!memcmp(rl->rl_identity_addr, addr, BLE_DEV_ADDR_LEN))) {
-            BLE_HS_LOG(ERROR, "kevinh did find!\n");
             return i;
         }
         ++rl;
